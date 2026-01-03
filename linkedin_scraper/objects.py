@@ -60,6 +60,36 @@ class Accomplishment(Institution):
 
 
 @dataclass
+class Skill:
+    name: str = None
+    endorsements: int = None
+
+
+@dataclass
+class Language:
+    name: str = None
+    proficiency: str = None
+
+
+@dataclass
+class Certification:
+    name: str = None
+    organization: str = None
+    issue_date: str = None
+    credential_id: str = None
+    credential_url: str = None
+
+
+@dataclass
+class HonorAward:
+    title: str = None
+    issuer: str = None
+    issue_date: str = None
+    description: str = None
+    associated_with: str = None
+
+
+@dataclass
 class Scraper:
     driver: Chrome = None
     WAIT_FOR_ELEMENT_TIMEOUT = 5

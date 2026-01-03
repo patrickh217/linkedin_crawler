@@ -4,7 +4,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException
-from .objects import Experience, Education, Scraper, Interest, Accomplishment, Contact
+from .objects import Experience, Education, Scraper, Interest, Accomplishment, Contact, Skill, Language, Certification, HonorAward
 import os
 from linkedin_scraper import selectors
 
@@ -26,6 +26,10 @@ class Person(Scraper):
         company=None,
         job_title=None,
         contacts=None,
+        skills=None,
+        languages=None,
+        certifications=None,
+        honors_awards=None,
         driver=None,
         get=True,
         scrape=True,
@@ -41,6 +45,10 @@ class Person(Scraper):
         self.accomplishments = accomplishments or []
         self.also_viewed_urls = []
         self.contacts = contacts or []
+        self.skills = skills or []
+        self.languages = languages or []
+        self.certifications = certifications or []
+        self.honors_awards = honors_awards or []
 
         if driver is None:
             try:
@@ -83,6 +91,18 @@ class Person(Scraper):
 
     def add_contact(self, contact):
         self.contacts.append(contact)
+
+    def add_skill(self, skill):
+        self.skills.append(skill)
+
+    def add_language(self, language):
+        self.languages.append(language)
+
+    def add_certification(self, certification):
+        self.certifications.append(certification)
+
+    def add_honor_award(self, honor_award):
+        self.honors_awards.append(honor_award)
 
     def scrape(self, close_on_complete=True):
         if self.is_signed_in():
@@ -326,6 +346,293 @@ class Person(Scraper):
             about=None
         self.about = about
 
+    def get_skills(self):
+        url = os.path.join(self.linkedin_url, "details/skills")
+        self.driver.get(url)
+        self.focus()
+        main = self.wait_for_element_to_load(by=By.TAG_NAME, name="main")
+        self.scroll_to_half()
+        self.scroll_to_bottom()
+
+        try:
+            main_list = self.wait_for_element_to_load(name="pvs-list__container", base=main)
+            for item in main_list.find_elements(By.CLASS_NAME, "pvs-list__paged-list-item"):
+                try:
+                    # Get skill name from the link element
+                    skill_name = ""
+                    endorsements = 0
+
+                    # Try to find skill name in link
+                    try:
+                        skill_link = item.find_element(By.CSS_SELECTOR, "a[href*='keywords=']")
+                        skill_name_elem = skill_link.find_element(By.XPATH, ".//span[@aria-hidden='true']")
+                        skill_name = skill_name_elem.text.strip()
+                    except NoSuchElementException:
+                        continue
+
+                    # Try to get endorsements count
+                    try:
+                        endorsement_link = item.find_element(By.CSS_SELECTOR, "a[href*='endorsers']")
+                        endorsement_text = endorsement_link.find_element(By.XPATH, ".//span[@aria-hidden='true']").text
+                        # Extract number from text like "4 endorsements"
+                        endorsement_parts = endorsement_text.split()
+                        if endorsement_parts:
+                            endorsements = int(endorsement_parts[0])
+                    except (NoSuchElementException, ValueError):
+                        endorsements = 0
+
+                    # Skip placeholder text for empty sections
+                    if skill_name and not self._is_empty_section_placeholder(skill_name):
+                        skill = Skill(
+                            name=skill_name,
+                            endorsements=endorsements
+                        )
+                        self.add_skill(skill)
+                except (NoSuchElementException, IndexError):
+                    continue
+        except Exception:
+            pass
+
+    def _is_empty_section_placeholder(self, text):
+        """Check if text is a LinkedIn placeholder for empty sections."""
+        placeholder_patterns = [
+            "Nothing to see for now",
+            "will appear here",
+            "No skills have been",
+            "hasn't added",
+            "not added any",
+        ]
+        text_lower = text.lower()
+        return any(pattern.lower() in text_lower for pattern in placeholder_patterns)
+
+    def get_languages(self):
+        url = os.path.join(self.linkedin_url, "details/languages")
+        self.driver.get(url)
+        self.focus()
+        main = self.wait_for_element_to_load(by=By.TAG_NAME, name="main")
+        self.scroll_to_half()
+        self.scroll_to_bottom()
+
+        try:
+            main_list = main.find_element(By.TAG_NAME, "ul")
+            for item in main_list.find_elements(By.TAG_NAME, "li"):
+                try:
+                    # Get all spans with aria-hidden="true"
+                    spans = item.find_elements(By.XPATH, ".//span[@aria-hidden='true']")
+
+                    language_name = ""
+                    proficiency = ""
+
+                    if len(spans) >= 1:
+                        language_name = spans[0].text.strip()
+                    if len(spans) >= 2:
+                        proficiency = spans[1].text.strip()
+
+                    # Skip placeholder text for empty sections
+                    if language_name and not self._is_empty_section_placeholder(language_name):
+                        language = Language(
+                            name=language_name,
+                            proficiency=proficiency
+                        )
+                        self.add_language(language)
+                except (NoSuchElementException, IndexError):
+                    continue
+        except Exception:
+            pass
+
+    def get_certifications(self):
+        url = os.path.join(self.linkedin_url, "details/certifications")
+        self.driver.get(url)
+        self.focus()
+        main = self.wait_for_element_to_load(by=By.TAG_NAME, name="main")
+        self.scroll_to_half()
+        self.scroll_to_bottom()
+
+        try:
+            main_list = main.find_element(By.TAG_NAME, "ul")
+            for item in main_list.find_elements(By.TAG_NAME, "li"):
+                try:
+                    cert_name = ""
+                    organization = ""
+                    issue_date = ""
+                    credential_id = ""
+                    credential_url = ""
+
+                    # Get all spans with aria-hidden="true"
+                    spans = item.find_elements(By.XPATH, ".//span[@aria-hidden='true']")
+
+                    if len(spans) >= 1:
+                        cert_name = spans[0].text.strip()
+                    if len(spans) >= 2:
+                        organization = spans[1].text.strip()
+                    if len(spans) >= 3:
+                        issue_date = spans[2].text.strip()
+                        # Remove "Issued " prefix if present
+                        if issue_date.startswith("Issued "):
+                            issue_date = issue_date[7:]
+                    if len(spans) >= 4:
+                        cred_text = spans[3].text.strip()
+                        if cred_text.startswith("Credential ID "):
+                            credential_id = cred_text[14:]
+
+                    # Try to get credential URL
+                    try:
+                        cred_link = item.find_element(By.CSS_SELECTOR, "a[href*='credential']")
+                        credential_url = cred_link.get_attribute("href")
+                    except NoSuchElementException:
+                        pass
+
+                    # Skip placeholder text for empty sections
+                    if cert_name and not self._is_empty_section_placeholder(cert_name):
+                        certification = Certification(
+                            name=cert_name,
+                            organization=organization,
+                            issue_date=issue_date,
+                            credential_id=credential_id,
+                            credential_url=credential_url
+                        )
+                        self.add_certification(certification)
+                except (NoSuchElementException, IndexError):
+                    continue
+        except Exception:
+            pass
+
+    def get_honors_awards(self):
+        url = os.path.join(self.linkedin_url, "details/honors")
+        self.driver.get(url)
+        self.focus()
+        main = self.wait_for_element_to_load(by=By.TAG_NAME, name="main")
+        self.scroll_to_half()
+        self.scroll_to_bottom()
+
+        try:
+            main_list = self.wait_for_element_to_load(name="pvs-list__container", base=main)
+            for item in main_list.find_elements(By.CLASS_NAME, "pvs-list__paged-list-item"):
+                try:
+                    title = ""
+                    issuer = ""
+                    issue_date = ""
+                    description = ""
+                    associated_with = ""
+
+                    # Get all spans with aria-hidden="true" - filter for non-empty unique values
+                    spans = item.find_elements(By.XPATH, ".//span[@aria-hidden='true']")
+
+                    # Extract unique non-empty text values (LinkedIn duplicates content for accessibility)
+                    seen_texts = set()
+                    unique_texts = []
+                    for span in spans:
+                        text = span.text.strip()
+                        if text and text not in seen_texts:
+                            seen_texts.add(text)
+                            unique_texts.append(text)
+
+                    for text in unique_texts:
+                        if "Issued by " in text:
+                            # Parse issuer and date from "Issued by X · Date"
+                            parts = text.replace("Issued by ", "").split(" · ")
+                            if len(parts) >= 1:
+                                issuer = parts[0].strip()
+                            if len(parts) >= 2:
+                                issue_date = parts[1].strip()
+                        elif "Associated with " in text:
+                            associated_with = text.replace("Associated with ", "")
+                        elif not title:
+                            # First non-special text is the title
+                            title = text
+                        else:
+                            # Remaining text is likely description
+                            if description:
+                                description = description + " " + text
+                            else:
+                                description = text
+
+                    # Skip placeholder text for empty sections
+                    if title and not self._is_empty_section_placeholder(title):
+                        honor_award = HonorAward(
+                            title=title,
+                            issuer=issuer,
+                            issue_date=issue_date,
+                            description=description,
+                            associated_with=associated_with
+                        )
+                        self.add_honor_award(honor_award)
+                except (NoSuchElementException, IndexError):
+                    continue
+        except Exception:
+            pass
+
+    def get_interests(self):
+        url = os.path.join(self.linkedin_url, "details/interests")
+        self.driver.get(url)
+        self.focus()
+        main = self.wait_for_element_to_load(by=By.TAG_NAME, name="main")
+        self.scroll_to_half()
+        self.scroll_to_bottom()
+
+        try:
+            # Find all tabs (Top Voices, Companies, Groups, Schools)
+            tabs = main.find_elements(By.CSS_SELECTOR, "button[role='tab']")
+
+            for tab in tabs:
+                try:
+                    # Get tab name from aria-hidden span to avoid duplication
+                    try:
+                        tab_name_elem = tab.find_element(By.XPATH, ".//span[@aria-hidden='true']")
+                        tab_name = tab_name_elem.text.strip()
+                    except NoSuchElementException:
+                        tab_name = tab.text.strip()
+                        # Remove duplicates like "Top VoicesTop Voices"
+                        if len(tab_name) > 0 and len(tab_name) % 2 == 0:
+                            half = len(tab_name) // 2
+                            if tab_name[:half] == tab_name[half:]:
+                                tab_name = tab_name[:half]
+
+                    tab.click()
+                    self.wait(1)  # Wait for tab content to load
+
+                    # Get list items from the current tab panel
+                    tab_panel = main.find_element(By.CSS_SELECTOR, "div[role='tabpanel']")
+                    self.scroll_to_half()
+                    self.scroll_to_bottom()
+
+                    items = tab_panel.find_elements(By.CLASS_NAME, "pvs-list__paged-list-item")
+
+                    for item in items:
+                        try:
+                            # Get the URL from the first link
+                            links = item.find_elements(By.TAG_NAME, "a")
+                            link_url = links[0].get_attribute("href") if links else ""
+
+                            # Get text from spans with aria-hidden="true"
+                            spans = item.find_elements(By.XPATH, ".//span[@aria-hidden='true']")
+
+                            # Extract unique non-empty text values
+                            seen_texts = set()
+                            unique_texts = []
+                            for span in spans:
+                                text = span.text.strip()
+                                if text and text not in seen_texts and not text.startswith("·"):
+                                    seen_texts.add(text)
+                                    unique_texts.append(text)
+
+                            if unique_texts:
+                                name = unique_texts[0]  # First text is usually the name
+                                description = unique_texts[1] if len(unique_texts) > 1 else ""
+
+                                interest = Interest(
+                                    institution_name=name,
+                                    linkedin_url=link_url
+                                )
+                                interest.title = f"{tab_name}: {description}" if description else tab_name
+                                self.add_interest(interest)
+                        except (NoSuchElementException, IndexError):
+                            continue
+                except (NoSuchElementException, IndexError):
+                    continue
+        except Exception:
+            pass
+
     def scrape_logged_in(self, close_on_complete=True):
         driver = self.driver
         duration = None
@@ -361,31 +668,19 @@ class Person(Scraper):
         # get education
         self.get_educations()
 
+        # get skills
+        self.get_skills()
+
+        # get languages
+        self.get_languages()
+
+        # get certifications
+        self.get_certifications()
+
+        # get honors & awards
+        self.get_honors_awards()
+
         driver.get(self.linkedin_url)
-
-        # get interest
-        try:
-
-            _ = WebDriverWait(driver, self.__WAIT_FOR_ELEMENT_TIMEOUT).until(
-                EC.presence_of_element_located(
-                    (
-                        By.XPATH,
-                        "//*[@class='pv-profile-section pv-interests-section artdeco-container-card artdeco-card ember-view']",
-                    )
-                )
-            )
-            interestContainer = driver.find_element(By.XPATH,
-                "//*[@class='pv-profile-section pv-interests-section artdeco-container-card artdeco-card ember-view']"
-            )
-            for interestElement in interestContainer.find_elements(By.XPATH,
-                "//*[@class='pv-interest-entity pv-profile-section__card-item ember-view']"
-            ):
-                interest = Interest(
-                    interestElement.find_element(By.TAG_NAME, "h3").text.strip()
-                )
-                self.add_interest(interest)
-        except:
-            pass
 
         # get accomplishment
         try:
@@ -457,11 +752,15 @@ class Person(Scraper):
             return None
 
     def __repr__(self):
-        return "<Person {name}\n\nAbout\n{about}\n\nExperience\n{exp}\n\nEducation\n{edu}\n\nInterest\n{int}\n\nAccomplishments\n{acc}\n\nContacts\n{conn}>".format(
+        return "<Person {name}\n\nAbout\n{about}\n\nExperience\n{exp}\n\nEducation\n{edu}\n\nSkills\n{skills}\n\nLanguages\n{languages}\n\nCertifications\n{certs}\n\nHonors & Awards\n{honors}\n\nInterest\n{int}\n\nAccomplishments\n{acc}\n\nContacts\n{conn}>".format(
             name=self.name,
             about=self.about,
             exp=self.experiences,
             edu=self.educations,
+            skills=self.skills,
+            languages=self.languages,
+            certs=self.certifications,
+            honors=self.honors_awards,
             int=self.interests,
             acc=self.accomplishments,
             conn=self.contacts,

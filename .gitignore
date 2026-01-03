@@ -13,3 +13,5 @@ scrape.py
 creds.json
 venv
 *.zip
+
+run.ipynb

@@ -1,6 +1,6 @@
 from os.path import dirname, basename, isfile
 from .person import Person
-from .objects import Institution, Experience, Education, Contact
+from .objects import Institution, Experience, Education, Contact, Skill, Language, Certification, HonorAward
 from .company import Company
 from .jobs import Job
 from .job_search import JobSearch
