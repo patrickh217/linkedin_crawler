@@ -130,7 +130,15 @@ class Company(Scraper):
             pass
         driver.get(os.path.join(self.linkedin_url, "people"))
 
-        _ = WebDriverWait(driver, 3).until(EC.presence_of_all_elements_located((By.XPATH, '//span[@dir="ltr"]')))
+        # Wait for the people list to load - try multiple selectors for compatibility
+        try:
+            _ = WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.XPATH, '//h2[contains(text(), "People you may know")]')))
+        except:
+            try:
+                _ = WebDriverWait(driver, 3).until(EC.presence_of_all_elements_located((By.XPATH, '//span[@dir="ltr"]')))
+            except:
+                # If neither selector works, just wait a bit and continue
+                time.sleep(2)
 
         driver.execute_script("window.scrollTo(0, Math.ceil(document.body.scrollHeight/2));")
         time.sleep(1)
@@ -186,71 +194,84 @@ class Company(Scraper):
 
         driver.get(self.linkedin_url)
 
-        _ = WebDriverWait(driver, 3).until(EC.presence_of_all_elements_located((By.XPATH, '//div[@dir="ltr"]')))
-
-        navigation = driver.find_element(By.CLASS_NAME, "org-page-navigation__items ")
-
-        self.name = driver.find_element(By.CLASS_NAME,"org-top-card-summary__title").text.strip()
-
-        # Click About Tab or View All Link
+        # Wait for page to load
         try:
-          self.__find_first_available_element__(
-            navigation.find_elements(By.XPATH, "//a[@data-control-name='page_member_main_nav_about_tab']"),
-            navigation.find_elements(By.XPATH, "//a[@data-control-name='org_about_module_see_all_view_link']"),
-          ).click()
+            _ = WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.TAG_NAME, 'main')))
         except:
-          driver.get(os.path.join(self.linkedin_url, "about"))
+            time.sleep(2)
 
-        _ = WebDriverWait(driver, 3).until(EC.presence_of_all_elements_located((By.TAG_NAME, 'section')))
-        time.sleep(3)
+        # Get company name from heading
+        try:
+            self.name = driver.find_element(By.XPATH, "//h1").text.strip()
+        except:
+            try:
+                self.name = driver.find_element(By.CLASS_NAME,"org-top-card-summary__title").text.strip()
+            except:
+                pass
 
-        if 'Cookie Policy' in driver.find_elements(By.TAG_NAME, "section")[1].text or any(classname in driver.find_elements(By.TAG_NAME, "section")[1].get_attribute('class') for classname in AD_BANNER_CLASSNAME):
-            section_id = 4
-        else:
-            section_id = 3
-       #section ID is no longer needed, we are using class name now.
-        #grid = driver.find_elements_by_tag_name("section")[section_id]
-        grid = driver.find_element(By.CLASS_NAME, "artdeco-card.org-page-details-module__card-spacing.artdeco-card.org-about-module__margin-bottom")
-        print(grid)
-        descWrapper = grid.find_elements(By.TAG_NAME, "p")
-        if len(descWrapper) > 0:
-            self.about_us = descWrapper[0].text.strip()
-        labels = grid.find_elements(By.TAG_NAME, "dt")
-        values = grid.find_elements(By.TAG_NAME, "dd")
-        num_attributes = min(len(labels), len(values))
-        #print("The length of the labels is " + str(len(labels)), "The length of the values is " + str(len(values)))
-        # if num_attributes == 0:
-        #     exit()
-        x_off = 0
-        for i in range(num_attributes):
-            txt = labels[i].text.strip()
-            if txt == 'Website':
-                self.website = values[i+x_off].text.strip()
-            if txt == 'Phone':
-                self.phone = values[i+x_off].text.strip()
-            elif txt == 'Industry':
-                self.industry = values[i+x_off].text.strip()
-            elif txt == 'Company size':
-                self.company_size = values[i+x_off].text.strip()
-                if len(values) > len(labels):
-                    x_off = 1
-            elif txt == 'Headquarters':
-                    self.headquarters = values[i+x_off].text.strip()
-            elif txt == 'Type':
-                self.company_type = values[i+x_off].text.strip()
-            elif txt == 'Founded':
-                self.founded = values[i+x_off].text.strip()
-            elif txt == 'Specialties':
-                self.specialties = "\n".join(values[i+x_off].text.strip().split(", "))
+        # Navigate to about page
+        driver.get(os.path.join(self.linkedin_url, "about"))
 
         try:
-            grid = driver.find_element(By.CLASS_NAME, "mt1")
-            spans = grid.find_elements(By.TAG_NAME, "span")
-            for span in spans:
-                txt = span.text.strip()
-                if "See all" in txt and "employees on LinkedIn" in txt:
-                    self.headcount = int(txt.replace("See all", "").replace("employees on LinkedIn", "").strip())
-        except NoSuchElementException: # Does not exist in page, skip it
+            _ = WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.TAG_NAME, 'main')))
+        except:
+            time.sleep(2)
+        time.sleep(2)
+
+        # Get about/overview text
+        try:
+            overview_section = driver.find_element(By.XPATH, "//h2[contains(text(), 'Overview')]/following-sibling::p")
+            self.about_us = overview_section.text.strip()
+        except:
+            try:
+                descWrapper = driver.find_elements(By.TAG_NAME, "p")
+                if len(descWrapper) > 0:
+                    self.about_us = descWrapper[0].text.strip()
+            except:
+                pass
+
+        # Get company details from dt/dd pairs
+        try:
+            labels = driver.find_elements(By.TAG_NAME, "dt")
+            values = driver.find_elements(By.TAG_NAME, "dd")
+
+            # Create a mapping of labels to values
+            label_texts = [label.text.strip() for label in labels]
+
+            for i, txt in enumerate(label_texts):
+                if i >= len(values):
+                    break
+                value = values[i].text.strip()
+
+                if txt == 'Website':
+                    self.website = value
+                elif txt == 'Phone':
+                    self.phone = value
+                elif txt == 'Industry':
+                    self.industry = value
+                elif txt == 'Company size':
+                    self.company_size = value
+                elif txt == 'Headquarters':
+                    self.headquarters = value
+                elif txt == 'Type':
+                    self.company_type = value
+                elif txt == 'Founded':
+                    self.founded = value
+                elif txt == 'Specialties':
+                    self.specialties = "\n".join(value.split(", "))
+        except:
+            pass
+
+        # Get headcount from associated members link
+        try:
+            members_link = driver.find_element(By.XPATH, "//a[contains(text(), 'associated members')]")
+            txt = members_link.text.strip()
+            # Extract number from text like "14,436 associated members"
+            import re
+            match = re.search(r'([\d,]+)\s*associated members', txt)
+            if match:
+                self.headcount = int(match.group(1).replace(',', ''))
+        except:
             pass
 
         driver.execute_script("window.scrollTo(0, Math.ceil(document.body.scrollHeight/2));")
